@@ -1,0 +1,17 @@
+# Secrets
+**/appsettings.json
+appsettings.json
+appsettings.*.json
+!appsettings.example.json
+
+# Build results
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+
+# User-specific files
+*.suo
+*.user
+*.userosginiu
+*.sln.docstates

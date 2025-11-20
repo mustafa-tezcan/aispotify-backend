@@ -1,0 +1,35 @@
+
+## Build artifacts
+bin/
+obj/
+
+## User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Visual Studio Code
+.vscode/
+
+## Logs
+*.log
+
+## Environment configs
+appsettings.Development.json
+appsettings.Local.json
+
+## Sensitive files (KEY, TOKEN vs)
+*.secret
+*.key
+*.env
+
+## ASP.NET identity DB
+*.db
+*.sqlite
+
+## Rider IDE
+.idea/
+
+## MacOS junk
+.DS_Store
