@@ -21,7 +21,15 @@ namespace spotifyapp.Interfaces
         //kullanıcı onay verince dönen kodu kullarak acces token , refresh token vs almak için .
         Task<string> ExchangeCodeForTokenAsync(string code);
 
-        public Task<List<SpotifyTrackDto>> GetTrackDetailsAsync(List<(string artist, string track)> songs);
+        Task<List<SpotifyTrackDto>> GetTrackDetailsAsync(
+            List<(string artist, string track)> songs);
+
+        Task<string> CreatePlaylistAsync(
+        string spotifyUserId, 
+        string accessToken, 
+        string name, 
+        string description, 
+        List<string> trackIds);
         
     }
 }

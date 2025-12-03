@@ -88,76 +88,105 @@ namespace spotifyapp.Services
             return content;
         }
 
-   public async Task<List<SpotifyTrackDto>> GetTrackDetailsAsync(List<(string artist, string track)> songs)
-{
-    // 1️⃣ App-level token al
-    var clientId = _configuration["Spotify:ClientId"];
-    var clientSecret = _configuration["Spotify:ClientSecret"];
-    var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
-
-    var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://accounts.spotify.com/api/token");
-    tokenRequest.Headers.Authorization = new AuthenticationHeaderValue("Basic", auth);
-    tokenRequest.Content = new FormUrlEncodedContent(new[]
-    {
-        new KeyValuePair<string, string>("grant_type", "client_credentials")
-    });
-
-    var tokenResponse = await _httpClient.SendAsync(tokenRequest);
-    tokenResponse.EnsureSuccessStatusCode();
-    var tokenJson = await tokenResponse.Content.ReadAsStringAsync();
-    using var tokenDoc = JsonDocument.Parse(tokenJson);
-    var accessToken = tokenDoc.RootElement.GetProperty("access_token").GetString();
-
-    _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-    // 2️⃣ Her şarkıyı Spotify Search API ile detaylandır
-    var results = new List<SpotifyTrackDto>();
-
-    foreach (var (artist, track) in songs)
-    {
-        var query = $"{track} artist:{artist}";
-        var url = $"https://api.spotify.com/v1/search?q={Uri.EscapeDataString(query)}&type=track&limit=1";
-
-        var response = await _httpClient.GetAsync(url);
-        if (!response.IsSuccessStatusCode) continue;
-
-        var json = await response.Content.ReadAsStringAsync();
-        
-        // DEBUG: Spotify'den gelen raw response
-        Console.WriteLine($"=== SPOTIFY RAW RESPONSE for {track} ===");
-        Console.WriteLine(json);
-        Console.WriteLine("=== END ===");
-        
-        using var doc = JsonDocument.Parse(json);
-
-        var items = doc.RootElement.GetProperty("tracks").GetProperty("items");
-        if (items.GetArrayLength() == 0) continue;
-
-        var trackElement = items[0];
-        
-        // DEBUG: preview_url field'ını kontrol et
-        if (trackElement.TryGetProperty("preview_url", out var previewProp))
+        public async Task<List<SpotifyTrackDto>> GetTrackDetailsAsync(
+            List<(string artist, string track)> songs)
         {
-            Console.WriteLine($"Track: {track}");
-            Console.WriteLine($"  preview_url exists: YES");
-            Console.WriteLine($"  preview_url is null: {previewProp.ValueKind == JsonValueKind.Null}");
-            Console.WriteLine($"  preview_url value: {previewProp.GetString() ?? "NULL"}");
-        }
-        else
-        {
-            Console.WriteLine($"Track: {track} - preview_url field YOK!");
-        }
+            // 1️⃣ App-level token al (Client Credentials)
+            var clientId = _configuration["Spotify:ClientId"];
+            var clientSecret = _configuration["Spotify:ClientSecret"];
+            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
 
-        results.Add(SpotifyMapper.ToSpotifyTrackDto(trackElement));
-    }
+            var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://accounts.spotify.com/api/token");
+            tokenRequest.Headers.Authorization = new AuthenticationHeaderValue("Basic", auth);
+            tokenRequest.Content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "client_credentials")
+            });
 
-    return results;
-}
+            var tokenResponse = await _httpClient.SendAsync(tokenRequest);
+            tokenResponse.EnsureSuccessStatusCode();
+            var tokenJson = await tokenResponse.Content.ReadAsStringAsync();
+            using var tokenDoc = JsonDocument.Parse(tokenJson);
+            var accessToken = tokenDoc.RootElement.GetProperty("access_token").GetString();
+
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            // 2️⃣ Her şarkıyı ara
+            var results = new List<SpotifyTrackDto>();
+
+            foreach (var (artist, track) in songs)
+            {
+                var query = $"{track} artist:{artist}";
+                var url = $"https://api.spotify.com/v1/search?q={Uri.EscapeDataString(query)}&type=track&limit=1";
+
+                var response = await _httpClient.GetAsync(url);
+                if (!response.IsSuccessStatusCode) continue;
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+
+                var items = doc.RootElement.GetProperty("tracks").GetProperty("items");
+                if (items.GetArrayLength() == 0) continue;
+
+                var trackElement = items[0];
+                results.Add(SpotifyMapper.ToSpotifyTrackDto(trackElement));
+            }
+
+            return results;
+        }
 
 
         public Task<(bool Success, string NewAccessToken, string Error)> RefreshAccessTokenAsync(User user)
         {
             throw new NotImplementedException();
+        }
+
+        public async Task<string> CreatePlaylistAsync(
+            string spotifyUserId, 
+            string accessToken, 
+            string name, 
+            string description, 
+            List<string> trackIds)
+        {
+            _httpClient.DefaultRequestHeaders.Authorization = 
+                new AuthenticationHeaderValue("Bearer", accessToken);
+
+            // 1️⃣ Playlist oluştur
+            var createPlaylistUrl = $"https://api.spotify.com/v1/users/{spotifyUserId}/playlists";
+            var playlistData = new
+            {
+                name = name,
+                description = description,
+                @public = false // Private playlist
+            };
+
+            var createResponse = await _httpClient.PostAsJsonAsync(createPlaylistUrl, playlistData);
+            
+            if (!createResponse.IsSuccessStatusCode)
+            {
+                var error = await createResponse.Content.ReadAsStringAsync();
+                throw new Exception($"Playlist oluşturulamadı: {error}");
+            }
+
+            var createJson = await createResponse.Content.ReadAsStringAsync();
+            using var createDoc = JsonDocument.Parse(createJson);
+            var playlistId = createDoc.RootElement.GetProperty("id").GetString();
+
+            // 2️⃣ Şarkıları ekle
+            var addTracksUrl = $"https://api.spotify.com/v1/playlists/{playlistId}/tracks";
+            var trackUris = trackIds.Select(id => $"spotify:track:{id}").ToList();
+            var tracksData = new { uris = trackUris };
+
+            var addResponse = await _httpClient.PostAsJsonAsync(addTracksUrl, tracksData);
+            
+            if (!addResponse.IsSuccessStatusCode)
+            {
+                var error = await addResponse.Content.ReadAsStringAsync();
+                throw new Exception($"Şarkılar eklenemedi: {error}");
+            }
+
+            Console.WriteLine($"✅ Playlist oluşturuldu: {playlistId}");
+            return playlistId;
         }
     }
 }

@@ -70,9 +70,6 @@ namespace spotifyapp.Controllers
             if (string.IsNullOrEmpty(state))
                 return BadRequest("State parameter is required.");
 
-            // 🔹 Burada login sırasında sakladığın state ile eşleştir
-            // Örnek: if (state != expectedState) return BadRequest("State mismatch");
-
             try
             {
                 // 1️⃣ Spotify'dan access & refresh token al
@@ -94,6 +91,7 @@ namespace spotifyapp.Controllers
                 if (existingUser == null)
                 {
                     await _userRepository.CreateAsync(userModel);
+                    existingUser = userModel; // ✅ Yeni oluşturuldu, onu kullan
                 }
                 else
                 {
@@ -107,14 +105,14 @@ namespace spotifyapp.Controllers
                     await _userRepository.UpdateAsync(existingUser);
                 }
 
-                // 5️⃣ Sonucu dön
-                return Ok(new
-                {
-                    message = "Spotify bağlantısı başarılı!",
-                    token = tokenDto,
-                    profile = userDto,
-                    jwt = _tokenService.CreateToken(existingUser)
-                });
+                // 5️⃣ JWT oluştur
+                var jwt = _tokenService.CreateToken(existingUser);
+
+                // ❌ Eskisi (JSON döndürüyordu):
+                // return Ok(new { message = "...", token = tokenDto, profile = userDto, jwt = jwt });
+
+                // ✅ Yenisi (Mobile'a deep link ile yönlendir):
+                return Redirect($"postify://auth/callback?jwt={jwt}");
             }
             catch (HttpRequestException ex)
             {
